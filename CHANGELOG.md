@@ -11,9 +11,6 @@
   used
 - `ms` was capped at 300, so the slow-motion values suggested for checking the flap
   were silently clamped and the test could not work. The cap is now 2000
-- Added `www/flaptest.html`, a diagnostic page showing four flap implementations side
-  by side at 1.4 seconds per step, to find out which one a given device renders with
-  two distinct beats
 
 ## 1.13.1
 
