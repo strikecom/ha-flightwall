@@ -10,7 +10,10 @@
   the first snapped both halves over at once. The cell now remembers which class it
   used
 - `ms` was capped at 300, so the slow-motion values suggested for checking the flap
-  were silently clamped and the test could not work. The cap is now 2000
+  were silently clamped and the test could not work. The cap is now 2000, in the page
+  and in the `flightwall_ms` helper alike
+- The flap speed documentation still described a default of 76 and warned against
+  going above 120, which is the opposite of what the presets have done since 1.13.0
 
 ## 1.13.1
 

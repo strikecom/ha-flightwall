@@ -200,7 +200,7 @@ board — that is the fastest way to iterate, since you are not waiting for airc
 | `l1`–`l8` | Label overrides | see below |
 | `p` | Progress, `0` to `cols` | `10` |
 | `cols` | Board width in characters | `16` |
-| `ms` | Milliseconds per flap step | `76` |
+| `ms` | Milliseconds per flap step, `12`-`2000` | preset |
 | `laps` | Extra full passes before a cell settles, `0`–`3` | `1` |
 | `logo` | Airline IATA code, or a full image URL | none |
 | `perf` | `high`, `mid` or `low` preset for weaker tablets | `high` |
@@ -234,8 +234,12 @@ plus every cell. Raising `cols` much past 20 will overflow horizontally; adjust 
 
 ### Flap speed and feel
 
-`ms` is the dwell per step, default 76. Lower is faster and more frantic; above about
-120 the board takes uncomfortably long to settle.
+`ms` is the dwell per step, and comes from the `perf` preset unless you pass it. A
+step is two beats, so it also sets how long each one lasts: below roughly 120 the
+fall and the rise blur into a single event and the board stops reading as mechanical.
+Above about 400 nothing breaks, but it is slow enough that it is only really useful
+for watching the mechanism - `?ms=1400` makes the two beats unmistakable. The page
+clamps it to 12-2000.
 
 Total settle time is driven by the character set length, because a real board cycles
 through its physical sequence in order. `MAIN` has 46 entries, so a worst-case cell

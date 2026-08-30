@@ -125,11 +125,13 @@ input_number:
     mode: box
     icon: mdi:stairs
 
-  # Milliseconds per flap. Lower is faster and more frantic.
+  # Milliseconds per flap. Below about 120 the fall and the rise blur into one
+  # event and the board stops looking mechanical. Above about 400 is only useful
+  # for checking the mechanism in slow motion.
   flightwall_ms:
     name: Flightwall Step ms
     min: -1
-    max: 300
+    max: 2000
     step: 1
     initial: -1
     mode: box
