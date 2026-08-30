@@ -25,7 +25,7 @@ alphabet until it reaches its letter, so reaching `Z` visibly takes longer than
 reaching `B`. Columns start in a left-to-right sweep with slight jitter, so they do
 not move in lockstep.
 
-![Split-flap style](docs/images/split-flap.jpg)
+<img width="979" height="611" alt="image" src="https://github.com/user-attachments/assets/cc0d5d35-c685-47f5-8080-879e06615734" />
 
 Labels are printed on the frame rather than set in flaps, which is how a real board
 does it. They are fixed unless you override them with `l1`–`l8` in the URL.
