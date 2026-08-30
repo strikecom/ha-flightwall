@@ -12,6 +12,13 @@ particular [The Flightwall](https://theflightwall.com/).
 
 ## Two display styles
 
+Three helpers control the display, all created by the package:
+`input_select.flightwall_style` picks the look, `input_select.flightwall_perf` sets
+the animation budget, and `input_number.flightwall_laps` sets how many extra passes
+each cell takes before settling. All take effect on the next popup, with no restart.
+Put them on any dashboard to switch without opening settings.
+
+
 Switch with `input_select.flightwall_style`. Takes effect on the next popup, no
 restart needed. Add the dropdown to any dashboard if you want to flip between them
 easily.

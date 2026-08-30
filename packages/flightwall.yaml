@@ -86,6 +86,69 @@ input_select:
     initial: dot-matrix
     icon: mdi:view-dashboard-variant
 
+  # Animation budget for the split-flap board. Lower it if the flaps stutter on
+  # the tablet. "low" keeps the character cycling but drops the 3D flip, which
+  # is where most of the GPU work is. Takes effect on the next popup.
+  flightwall_perf:
+    name: Flightwall Performance
+    options:
+      - high
+      - mid
+      - low
+    initial: high
+    icon: mdi:speedometer
+
+# Every numeric helper below uses -1 for "leave it to the performance preset".
+# That way the preset still means something once the helpers exist.
+input_number:
+  # Extra full passes through the character set before a cell settles.
+  # 0 is the shortest path, so cells whose character has not changed never move.
+  # 1 sends every cell all the way round once more, so the whole board moves.
+  flightwall_laps:
+    name: Flightwall Laps
+    min: -1
+    max: 3
+    step: 1
+    initial: -1
+    mode: box
+    icon: mdi:rotate-right
+
+  # Hard cap on how many flaps a single cell makes. The strongest performance
+  # lever there is: a capped cell starts partway round instead of walking the
+  # whole character set.
+  flightwall_maxsteps:
+    name: Flightwall Max Steps
+    min: -1
+    max: 45
+    step: 1
+    initial: -1
+    mode: box
+    icon: mdi:stairs
+
+  # Milliseconds per flap. Lower is faster and more frantic.
+  flightwall_ms:
+    name: Flightwall Step ms
+    min: -1
+    max: 300
+    step: 1
+    initial: -1
+    mode: box
+    icon: mdi:timer-outline
+
+input_boolean:
+  # The 3D flip itself. Off leaves the characters cycling in place, which is a
+  # last resort for very weak hardware.
+  flightwall_flip:
+    name: Flightwall 3D Flip
+    initial: true
+    icon: mdi:rotate-3d-variant
+
+  # The restore, blink and flap opening sequence.
+  flightwall_intro:
+    name: Flightwall Intro
+    initial: true
+    icon: mdi:play-box-outline
+
 rest_command:
   # Fully Kiosk Browser remote administration. Requires the Plus licence.
   # Replace TABLET_IP and FULLY_PASSWORD, or delete this block entirely and

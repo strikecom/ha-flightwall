@@ -91,6 +91,14 @@ actions:
                               {% set nw = as_timestamp(now()) | int %}
                               {% set a = arr - nw %}
                               {% set prog = ([[(((nw - dep) / ([arr - dep, 1] | max)) * 16) | round(0) | int, 0] | max, 16] | min) if (arr > dep and dep > 0) else 0 %}
+                              {% set h_laps = states('input_number.flightwall_laps') | int(-1) %}
+                              {% set h_max = states('input_number.flightwall_maxsteps') | int(-1) %}
+                              {% set h_ms = states('input_number.flightwall_ms') | int(-1) %}
+                              {% set opt = (('&laps=' ~ h_laps) if h_laps >= 0 else '')
+                                         ~ (('&maxsteps=' ~ h_max) if h_max >= 0 else '')
+                                         ~ (('&ms=' ~ h_ms) if h_ms >= 12 else '')
+                                         ~ ('' if is_state('input_boolean.flightwall_flip','off') == false else '&flip=0')
+                                         ~ ('' if is_state('input_boolean.flightwall_intro','off') == false else '&intro=0') %}
                               {% set atxt = ((a // 3600) ~ 'H' ~ ((a % 3600) // 60) ~ 'M') if a >= 3600 else ((a // 60) ~ 'M') %}
                               {% set r1 = (fnum if fnum else (cs if cs else reg))[:14] %}
                               {% set r2 = (model if (model and model | length <= 16) else code)[:16] %}
@@ -99,7 +107,7 @@ actions:
                               {% set r5 = ((arr | timestamp_custom('%H:%M', true) ~ ' IN ' ~ atxt) if (arr > 0 and a > 0) else 'EN ROUTE')[:16] %}
                               {% set r6 = (('{:,}'.format(f.altitude | int) | replace(',', '.') ~ ' FT') if f.altitude is defined else '')[:16] %}
                               {% set r7 = (((f.ground_speed | int | string) ~ ' KT') if f.ground_speed is defined else '')[:16] %}
-                              /local/flightwall/splitflap.html?r1={{ r1 | urlencode }}&r2={{ r2 | urlencode }}&r3={{ r3 | urlencode }}&r4={{ r4 | urlencode }}&r5={{ r5 | urlencode }}&r6={{ r6 | urlencode }}&r7={{ r7 | urlencode }}&logo={{ iata | urlencode }}&p={{ prog }}&cols=16&ms=76
+                              /local/flightwall/splitflap.html?r1={{ r1 | urlencode }}&r2={{ r2 | urlencode }}&r3={{ r3 | urlencode }}&r4={{ r4 | urlencode }}&r5={{ r5 | urlencode }}&r6={{ r6 | urlencode }}&r7={{ r7 | urlencode }}&logo={{ iata | urlencode }}&p={{ prog }}&cols=16&perf={{ states('input_select.flightwall_perf') | default('high', true) }}{{ opt }}
                             card_mod:
                               style: |
                                 ha-card {

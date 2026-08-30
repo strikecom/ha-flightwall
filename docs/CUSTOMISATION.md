@@ -201,8 +201,12 @@ board — that is the fastest way to iterate, since you are not waiting for airc
 | `p` | Progress, `0` to `cols` | `10` |
 | `cols` | Board width in characters | `16` |
 | `ms` | Milliseconds per flap step | `76` |
+| `laps` | Extra full passes before a cell settles, `0`–`3` | `1` |
 | `logo` | Airline IATA code, or a full image URL | none |
-| `lite` | `1` trims painted effects for older tablets | `0` |
+| `perf` | `high`, `mid` or `low` preset for weaker tablets | `high` |
+| `lite` | `1` trims painted effects | preset |
+| `flip` | `0` swaps characters without the 3D flip | preset |
+| `maxsteps` | Cap on flaps per cell, `0` uncapped | preset |
 | `intro` | `0` disables the incoming-flight sequence | `1` |
 | `hold` | Milliseconds the previous flight stays visible | `900` |
 | `blink` | Milliseconds the banner blinks | `2200` |
@@ -287,40 +291,145 @@ Nothing is stored on the Home Assistant side: the page writes the current values
 next one. On the very first load, or in a browser with storage disabled, there is no
 previous flight and the sequence is skipped automatically.
 
+### Settle time
+
+Two parameters set how long the board takes to come to rest:
+
+| `laps` | Worst-case steps | At `ms=76` | At `ms=55` |
+|---|---|---|---|
+| `0` | 45 | 4.3 s | 3.3 s |
+| `1` | 91 | 7.8 s | 5.9 s |
+| `2` | 137 | 11.3 s | 8.3 s |
+
+`laps=0` takes the shortest path: each cell stops the first time it reaches its
+character, and a cell whose character has not changed never moves. Sparse and true to
+a real board, but visually thin when only a few values differ.
+
+`laps=1`, the default, sends every cell all the way round once more before it
+settles, so the whole board moves on every update. Add the intro sequence and the
+board is at rest after about eleven seconds at the default `ms`.
+
+If that feels slow, lower `ms` rather than `laps` — more flips at a quicker pace
+reads better than fewer flips at a stately one.
+
 ### Performance on older tablets
 
-The board animates up to 128 cells at once, so weak hardware shows it. In order of
-impact:
+### Helpers
 
-1. **`lite=1`** drops the cell shadows, corner radius, banner glow and logo filter.
-   Costs a little depth, buys the most frames.
-2. **`cols=12`** removes a quarter of the cells outright. Truncate the values to
-   match in the automation.
-3. **`ms=110`** slows each step, so fewer frames per second are needed.
-4. **Shorten `MAIN`** in the script. It has 46 entries, so a worst-case cell does 45
-   flips. Dropping `.,-:/>()+ ` to just `.-:` cuts that noticeably.
-5. **`intro=0`** skips the restore-and-blink sequence.
+Everything is switchable from a dashboard. The package creates:
 
-Three things are already handled in the code and are worth not undoing: cells use
-`contain: layout paint style` so a flip cannot trigger work outside its own cell,
-`perspective` sits on the row rather than on every cell, and the flip restarts by
-alternating two identical animation names rather than forcing a synchronous reflow.
-An earlier version read `offsetWidth` on every step, which meant several thousand
-forced layouts per update.
+| Helper | Effect |
+|---|---|
+| `input_select.flightwall_style` | dot-matrix or split-flap |
+| `input_select.flightwall_perf` | `high`, `mid` or `low` preset |
+| `input_number.flightwall_laps` | extra passes, `-1` leaves it to the preset |
+| `input_number.flightwall_maxsteps` | flap cap, `-1` leaves it to the preset |
+| `input_number.flightwall_ms` | step duration, `-1` leaves it to the preset |
+| `input_boolean.flightwall_flip` | the 3D flip itself |
+| `input_boolean.flightwall_intro` | the opening sequence |
 
-Shading is a static difference between the leaf faces rather than an animated
-`filter: brightness()`. Animating a filter forces a repaint on every frame, which was
-the second largest cost.
+The numeric helpers use `-1` for "leave it to the preset", and the automation only
+puts a parameter in the URL when it is set. Without that, every helper would override
+the preset all the time and `perf` would stop meaning anything.
 
-On Android it is also worth enabling **Force GPU rendering** in the developer
-options, and giving the Home Assistant app an exception from battery optimisation.
+Set this from the dashboard rather than the URL: the helpers are passed straight
+through to the board by the automation, so you can change it on the
+tablet itself and trigger the next popup to see the result.
+
+For quicker iteration, open the board directly with the parameter appended, which
+needs no aircraft and no automation run:
+
+```
+http://your-ha:8123/local/flightwall/splitflap.html?perf=low
+```
+
+Start with the `perf` preset and only reach for individual parameters if it is not
+enough. Any explicit parameter overrides the preset, so `perf=low&ms=76` is valid.
+
+| `perf` | `ms` | `maxsteps` | Beat 1 | Beat 2 | Text writes | Settle |
+|---|---|---|---|---|---|---|
+| `high` | 170 | 14 | 88 ms | 82 ms | ~3,800 | 3.2 s |
+| `mid` | 145 | 8 | 75 ms | 70 ms | ~2,500 | 2.0 s |
+| `low` | 120 | 5 | 62 ms | 58 ms | ~1,700 | 1.5 s |
+
+Write counts are measured, not estimated, by instrumenting `textContent` while the
+board runs headlessly.
+
+**The two parameters do different jobs, and `ms` is the one that decides how
+mechanical it looks.**
+
+`ms` is how long a single flap takes. A flap is two beats: the upper leaf falls, then
+the lower one swings up. Below roughly 120 ms the two beats blur into one event and
+the board stops reading as mechanical, no matter how many flaps it makes. An earlier
+version used 76 ms, and the sequential motion was simply invisible.
+
+`maxsteps` is how many flaps a cell makes. It has almost nothing to do with realism
+and almost everything to do with load: it is the difference between 128 cells doing
+five updates each and doing forty-five.
+
+So realism comes from **fewer, slower** flaps rather than many fast ones, which is
+also why the presets got lighter as they got more convincing.
+
+`laps` sends every cell all the way round the set once more, so that even a cell
+whose character has not changed moves. It is a stylistic choice rather than a
+realistic one, and it multiplies the work: leave it at `-1` unless you want it.
+
+### Suggested starting points
+
+| You want | `ms` | `maxsteps` | `laps` |
+|---|---|---|---|
+| Most convincing, if the tablet can take it | 200 | 14 | -1 |
+| A good default | 170 | 14 | -1 |
+| Snappier, still mechanical | 140 | 8 | -1 |
+| Whole board churns on every update | 170 | 25 | 1 |
+| Weak hardware | 120 | 5 | -1 |
+
+Change one at a time. `ms` first, since it decides whether the mechanism is visible
+at all, then `maxsteps` until it runs smoothly.
+
+To check the mechanism itself, slow it right down and cut it to a single flap per
+cell:
+
+```
+...splitflap.html?ms=1200&maxsteps=1&laps=0&intro=0
+```
+
+At 1200 ms each beat lasts over half a second, so the upper leaf visibly drops before
+the lower one swings up. If the two still look simultaneous there, the problem is the
+rendering rather than the speed, and `www/flaptest.html` will tell you which variant
+your device does render correctly: it shows four implementations side by side at 1.4
+seconds per step.
+
+If it still stutters at `perf=low`: `maxsteps=3`, then `cols=12` (and match the
+truncation in the automation), then `flip=0`, then `intro=0`.
+
+Helpers override the preset when they are set, so leave them at `-1` unless you are
+deliberately tuning one.
 
 ### How a flap works
 
 Each cell holds four layers: static `top` and `bottom` halves showing the current
-character, plus two animating leaves. On each step the top leaf (old character) falls
-away while the bottom leaf (new character) swings up, and the static halves are
-swapped underneath at the halfway point so the seam never shows a mismatch.
+character, plus two animating leaves.
+
+A step runs in **two beats**, which is what makes it read as a falling flap rather
+than a fold. The top leaf, carrying the old character, drops away over the first 52%
+of the step. Only then does the bottom leaf, carrying the new character, swing up
+over the remaining 48%. The static halves are swapped underneath while each leaf
+covers them, so the seam never shows a mismatch.
+
+`perspective` sits on the cell, not the row. It looks like an easy saving to move it
+up a level, but its origin then lands at the centre of the row: cells near the middle
+get almost no perspective and their rotation reads as a vertical squash rather than a
+fall. An earlier version made exactly that mistake, and the two beats became
+invisible even at a slow `ms`.
+
+`animation-fill-mode: backwards` on the lower leaf matters: without it the leaf would
+sit at its final upright position during its delay, showing the new character before
+the old one has finished falling.
+
+The logo flap is an ordinary cell whose set holds image URLs instead of characters,
+so it cycles through the stock carriers on its drum exactly as a letter cycles
+through the alphabet, and `maxsteps` and `laps` apply to it too.
 
 The `filter: brightness()` in the two keyframes is what sells the effect — the
 falling leaf darkens as it rotates away from the light, the rising one brightens.

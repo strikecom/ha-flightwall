@@ -23,7 +23,20 @@
             real Solari boards. Omit for a blank cell.
     l1..l8  optional label overrides, defaults are printed below
     cols    optional, board width in characters, default 16
-    ms      optional, milliseconds per flap step, default 76
+    ms      optional, milliseconds per flap step. 12 to 2000; values above
+            about 400 are only useful for checking the mechanism in slow
+            motion. Default comes from the perf preset.
+    laps    optional, extra full passes through the character set before a
+            cell settles. 0 is the shortest path, 1 the second shortest.
+            Default 1.
+    perf    optional, high | mid | low. A preset for weaker tablets; any
+            explicit parameter still overrides it. Default high.
+              high  full run through the character set, extra lap, all effects
+              mid   run-in capped at 12 steps, lite styling
+              low   run-in capped at 6 steps, lite styling, slower cadence
+    maxsteps optional, cap on how many flaps a cell makes. 0 is uncapped, and
+            a capped cell starts partway round instead of from its previous
+            character. This is the strongest performance lever there is.
     lite    optional, 1 trims painted effects for older tablets, default 0
     intro   optional, 0 disables the incoming-flight sequence, default 1
     hold    optional, ms the previous flight stays visible, default 900
@@ -89,12 +102,16 @@
     user-select: none;
   }
 
-  .row { display: flex; gap: calc(var(--gap) * 0.8); perspective: 260px; }
+  .row { display: flex; gap: calc(var(--gap) * 0.8); }
 
   .cell {
     position: relative;
     width: var(--cell-w);
     height: var(--cell-h);
+    /* Perspective belongs on the cell, not the row. On the row its origin sits
+       at the row's centre, so cells near the middle get almost no perspective
+       and their rotation reads as a vertical squash rather than a fall. */
+    perspective: calc(var(--cell-h) * 2.6);
     border-radius: calc(var(--cell-h) * 0.06);
     /* Isolate each cell so a flip cannot trigger layout or paint outside it.
        This is the single biggest win on low-powered tablets. */
@@ -138,7 +155,6 @@
   /* The two animating leaves sit above the static halves during a flip. */
   .leaf-top {
     top: 0;
-    will-change: transform;
     transform-origin: bottom center;
     z-index: 3;
     border-bottom: 1px solid var(--seam);
@@ -146,19 +162,24 @@
   }
   .leaf-bottom {
     bottom: 0;
-    will-change: transform;
     transform-origin: top center;
     z-index: 3;
     transform: rotateX(90deg);
     background: var(--flap-lit);
+    animation-fill-mode: backwards;
   }
   .leaf-top > span    { top: 0; }
   .leaf-bottom > span { top: -100%; }
 
-  .flip-a .leaf-top    { animation: fall-a var(--dur) cubic-bezier(.36,.1,.6,1) forwards; }
-  .flip-a .leaf-bottom { animation: rise-a var(--dur) cubic-bezier(.4,.2,.3,1) forwards; }
-  .flip-b .leaf-top    { animation: fall-b var(--dur) cubic-bezier(.36,.1,.6,1) forwards; }
-  .flip-b .leaf-bottom { animation: rise-b var(--dur) cubic-bezier(.4,.2,.3,1) forwards; }
+  /* A real flap falls in two beats: the upper leaf drops away, and only then
+     does the lower leaf swing up into place. Running both across the whole
+     step reads as a fold rather than a fall. */
+  .flip-a .leaf-top    { animation: fall-a calc(var(--dur) * .52) cubic-bezier(.5,0,.9,.55) forwards; }
+  .flip-a .leaf-bottom { animation: rise-a calc(var(--dur) * .48) cubic-bezier(.2,.7,.4,1) forwards;
+                         animation-delay: calc(var(--dur) * .52); }
+  .flip-b .leaf-top    { animation: fall-b calc(var(--dur) * .52) cubic-bezier(.5,0,.9,.55) forwards; }
+  .flip-b .leaf-bottom { animation: rise-b calc(var(--dur) * .48) cubic-bezier(.2,.7,.4,1) forwards;
+                         animation-delay: calc(var(--dur) * .52); }
 
   /* Two identical pairs under different names. Alternating between them
      restarts the animation without the forced reflow a single name needs. */
@@ -219,6 +240,7 @@
   .lite .half { border-bottom-color: rgba(0, 0, 0, .8); }
   .lite #banner span { text-shadow: none; }
   .lite .cell.logo .half > img { filter: none; }
+  .noflip .leaf-top, .noflip .leaf-bottom { display: none; }
 
   .cell.bar .half > span { color: var(--lit); }
   .line.bar .label { color: var(--lit); opacity: .7; }
@@ -235,25 +257,55 @@
 
   var q = new URLSearchParams(location.search);
   var COLS = Math.max(8, Math.min(48, parseInt(q.get("cols"), 10) || 16));
-  var STEP = Math.max(12, Math.min(300, parseInt(q.get("ms"), 10) || 76));
+  var PERF = (q.get("perf") || "high").toLowerCase();
+  if (["high", "mid", "low"].indexOf(PERF) === -1) PERF = "high";
+  // maxsteps is the real lever. A cell walking the whole 46-character set does
+  // up to 45 steps; across 128 cells that is 5760 DOM updates per refresh
+  // whether or not anything rotates. Capping it lets the cell start partway
+  // round instead, so it still flaps, just for less long.
+  // A flap is two beats: the upper leaf falls, then the lower one swings up.
+  // Below roughly 120 ms per step the two blur into one event and the board
+  // stops looking mechanical, so the presets favour fewer, slower flaps over
+  // many fast ones. That is both more convincing and less work.
+  var PRESET = {
+    high: { ms: 170, laps: 0, lite: false, flip: true, maxsteps: 14 },
+    mid:  { ms: 145, laps: 0, lite: true,  flip: true, maxsteps: 8  },
+    low:  { ms: 120, laps: 0, lite: true,  flip: true, maxsteps: 5  }
+  }[PERF];
+
+  // An explicit parameter always wins over the preset.
+  function num(name, dflt, lo, hi) {
+    var v = parseInt(q.get(name), 10);
+    if (isNaN(v)) return dflt;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  var STEP = num("ms", PRESET.ms, 12, 2000);
   var INTRO = q.get("intro") !== "0";
   var HOLD  = Math.max(0, Math.min(5000, parseInt(q.get("hold"), 10) || 900));
   var BLINK = Math.max(0, Math.min(8000, parseInt(q.get("blink"), 10) || 2200));
   var STORE = "flightwall.previous";
   // lite=1 trims everything that costs paint time on weak tablets.
-  var LITE  = q.get("lite") === "1";
+  var LITE  = q.get("lite") ? q.get("lite") === "1" : PRESET.lite;
+  var LAPS  = num("laps", PRESET.laps, 0, 3);
+  var FLIP  = q.get("flip") ? q.get("flip") === "1" : PRESET.flip;
+  var MAXSTEPS = num("maxsteps", PRESET.maxsteps, 0, 200);
 
   // Alternating the two flip classes restarts the animation without forcing a
   // synchronous reflow, which at 128 cells was the main source of stutter.
+  //
+  // Which one ran last has to be remembered on the cell rather than read back
+  // off the element. settle() strips both classes at the top of the same step,
+  // so by the time this runs the classList no longer knows. Asking it put the
+  // same class back every time, and since nothing between the two touches
+  // style, the browser resolved one unchanged value and never restarted the
+  // animation: only the very first flap of a run actually moved, and every
+  // step after it snapped both halves over at once.
   function flipClass(c) {
     c.el.classList.remove("idle");
-    if (c.el.classList.contains("flip-a")) {
-      c.el.classList.remove("flip-a");
-      c.el.classList.add("flip-b");
-    } else {
-      c.el.classList.remove("flip-b");
-      c.el.classList.add("flip-a");
-    }
+    c.flip = c.flip === "flip-a" ? "flip-b" : "flip-a";
+    c.el.classList.remove(c.flip === "flip-a" ? "flip-b" : "flip-a");
+    c.el.classList.add(c.flip);
   }
 
   // Flap order. A real board cycles through its physical sequence, so reaching
@@ -261,6 +313,13 @@
   // is most of what makes it read as mechanical rather than as a fade.
   var MAIN = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,-:/>()+";
   var BAR  = " \u00B7\u2588";
+  var MAIN_SET = MAIN.split("");
+  var BAR_SET  = BAR.split("");
+
+  // Carrier logos a real board would carry on its drum. The new airline is
+  // appended if it is not already here, so the flap always has somewhere to
+  // land, and the previous one is kept so the run-in starts where it left off.
+  var LOGO_CODES = ["LH", "BA", "DE", "DL"];
 
   var LABELS = ["FLIGHT", "AIRCRAFT", "AIRLINE", "TO",
                 "ESTIMATED", "ALTITUDE", "AIRSPEED", "PROGRESS"];
@@ -347,8 +406,17 @@
 
   var previous = readPrevious();
 
+  // The drum the logo flap turns through: blank, the stock carriers, whatever
+  // was showing last time, and the airline now overhead.
+  var LOGO_SET = [""];
+  LOGO_CODES.concat([previous ? previous.logo : "", param("logo")]).forEach(function (code) {
+    var url = logoUrl(code);
+    if (url && LOGO_SET.indexOf(url) === -1) LOGO_SET.push(url);
+  });
+
   if (!LITE) document.body.classList.add("shade");
   if (LITE) document.body.classList.add("lite");
+  if (!FLIP) document.body.classList.add("noflip");
 
   var board = document.getElementById("board");
   var cells = [];
@@ -374,9 +442,11 @@
       bottom: faces[1],
       leafTop: faces[2],
       leafBottom: faces[3],
-      set: isBar ? BAR : MAIN,
+      set: isLogo ? LOGO_SET : (isBar ? BAR_SET : MAIN_SET),
       index: 0,
-      target: 0
+      target: 0,
+      laps: LAPS,
+      flip: null
     };
   }
 
@@ -397,7 +467,8 @@
       var wantsLogo = (idx === LOGO_ROW && i === 0);
       var c = buildCell(wantsLogo ? "logo" : (isBar ? "bar" : "char"));
       if (isEst) c.el.classList.add("est");
-      c.target = c.set.indexOf(chars[i]);
+      c.target = wantsLogo ? c.set.indexOf(logoUrl(param("logo")))
+                           : c.set.indexOf(chars[i]);
       if (c.target < 0) c.target = 0;
       c.col = i;
       c.row = idx;
@@ -415,14 +486,12 @@
 
   // Put a character in place with no animation, used to restore the previous
   // flight before the sequence starts.
-  function setInstant(c, ch) {
-    if (c.logo) return;
-    var i = c.set.indexOf(ch);
+  function setInstant(c, value) {
+    var i = c.set.indexOf(value);
     if (i < 0) i = 0;
     c.index = i;
-    var glyph = c.set.charAt(i);
-    c.top.textContent = glyph;
-    c.bottom.textContent = glyph;
+    face(c, c.top, c.set[i]);
+    face(c, c.bottom, c.set[i]);
   }
 
   function restorePrevious() {
@@ -449,84 +518,121 @@
     var prevLogo = logoUrl(previous.logo);
     cells.forEach(function (c) {
       if (!c.logo) return;
-      c.top.src = prevLogo;
-      c.bottom.src = prevLogo;
-      c.top.style.visibility = prevLogo ? "visible" : "hidden";
-      c.bottom.style.visibility = prevLogo ? "visible" : "hidden";
-      c.prevSrc = prevLogo;
+      setInstant(c, prevLogo);
       if (prevLogo) any = true;
     });
     return any;
   }
 
   // One flap step: the outgoing top leaf falls away while the incoming bottom
-  // leaf swings up, and the static halves are swapped underneath at the
-  // halfway point so the seam never shows the wrong character.
-  function step(c) {
-    if (c.index === c.target) return;
+  // leaf swings up, and the static halves are swapped underneath so the seam
+  // never shows the wrong character.
+  //
+  // Every cell used to run its own setTimeout chain. At 128 cells and a step
+  // every 76 ms that is well over a thousand timer callbacks a second, each
+  // with its own style recalculation. One requestAnimationFrame loop now drives
+  // all of them, so the work is batched into a single frame.
+
+  function settle(c) {
+    if (c.pending === null) return;
+    face(c, c.bottom, c.pending);
+    if (FLIP) {
+      // Dropping the flip class alone is not enough: without "idle" the leaves
+      // stay visible with no animation, so the top half keeps showing the old
+      // character while the bottom half already shows the new one.
+      c.el.classList.remove("flip-a", "flip-b");
+      c.el.classList.add("idle");
+    }
+    c.pending = null;
+  }
+
+  function face(c, el, value) {
+    if (c.logo) {
+      el.src = value || "";
+      el.style.visibility = value ? "visible" : "hidden";
+    } else {
+      el.textContent = value;
+    }
+  }
+
+  function advance(c) {
     var next = (c.index + 1) % c.set.length;
-    var cur = c.set.charAt(c.index);
-    var nxt = c.set.charAt(next);
+    var cur = c.set[c.index];
+    var nxt = c.set[next];
 
-    c.leafTop.textContent = cur;
-    c.leafBottom.textContent = nxt;
-    c.bottom.textContent = cur;
-    c.top.textContent = nxt;
-
-    flipClass(c);
-
-    setTimeout(function () {
-      c.bottom.textContent = nxt;
-      c.index = next;
-      c.el.classList.remove("flip-a", "flip-b");
-      c.el.classList.add("idle");
-      step(c);
-    }, STEP);
+    if (FLIP) {
+      face(c, c.leafTop, cur);
+      face(c, c.leafBottom, nxt);
+      face(c, c.bottom, cur);
+      face(c, c.top, nxt);
+      flipClass(c);
+      c.pending = nxt;
+    } else {
+      face(c, c.top, nxt);
+      face(c, c.bottom, nxt);
+      c.pending = null;
+    }
+    c.index = next;
   }
 
-  // The logo flap turns once, from the previous carrier to the new one.
-  function flipLogo(c) {
-    var from = c.prevSrc || "";
-    var to = logoUrl(param("logo"));
-    [c.top, c.bottom, c.leafTop, c.leafBottom].forEach(function (img) {
-      img.style.visibility = "hidden";
+  function finished(c) {
+    if (c.index !== c.target) return false;
+    if (c.laps > 0) { c.laps--; return false; }
+    return true;
+  }
+
+  var active = [];
+
+  function tick(now) {
+    var alive = 0;
+    for (var i = 0; i < active.length; i++) {
+      var c = active[i];
+      if (c === null) continue;
+      if (now < c.due) { alive++; continue; }
+
+      settle(c);
+      if (finished(c)) { active[i] = null; continue; }
+
+      advance(c);
+      c.due = now + STEP;
+      alive++;
+    }
+    if (alive > 0) requestAnimationFrame(tick);
+    else requestAnimationFrame(function (t) {
+      for (var j = 0; j < active.length; j++) if (active[j]) settle(active[j]);
     });
-    if (from) {
-      c.leafTop.src = from; c.leafTop.style.visibility = "visible";
-      c.bottom.src = from;  c.bottom.style.visibility = "visible";
-    }
-    if (to) {
-      c.leafBottom.src = to; c.leafBottom.style.visibility = "visible";
-      c.top.src = to;        c.top.style.visibility = "visible";
-    }
-    if (!from && !to) return;
-
-    flipClass(c);
-    setTimeout(function () {
-      if (to) { c.bottom.src = to; c.bottom.style.visibility = "visible"; }
-      else { c.bottom.style.visibility = "hidden"; }
-      c.el.classList.remove("flip-a", "flip-b");
-      c.el.classList.add("idle");
-    }, STEP);
   }
 
-  // Stagger by column so the update sweeps left to right, with a little jitter
-  // so the columns do not move in lockstep.
+  // With a step cap, a cell that would have to walk most of the set instead
+  // jumps to a position MAXSTEPS before its target and walks in from there.
+  // The run-in is still a real flap sequence, it just does not start from the
+  // previous character when that character is far away.
+  function shorten(c) {
+    if (!MAXSTEPS) return;
+    var len = c.set.length;
+    var distance = (c.target - c.index + len) % len;
+    var total = distance + c.laps * len;
+    if (total <= MAXSTEPS) return;
+    c.laps = 0;
+    var startIndex = (c.target - MAXSTEPS % len + len) % len;
+    setInstant(c, c.set[startIndex]);
+  }
+
   function flapToNew() {
+    var t0 = performance.now();
     cells.forEach(function (c) {
-      var delay = c.col * 52 + Math.random() * 90;
-      setTimeout(function () { c.logo ? flipLogo(c) : step(c); }, delay);
+      c.pending = null;
+      shorten(c);
+      c.due = t0 + c.col * 52 + Math.random() * 90;
     });
+    active = cells.slice();
+    requestAnimationFrame(tick);
   }
 
   function start() {
     writeCurrent();
     var restored = INTRO && restorePrevious();
-    if (!restored) {
-      cells.forEach(function (c) { if (c.logo) c.prevSrc = ""; });
-      flapToNew();
-      return;
-    }
+    if (!restored) { flapToNew(); return; }
 
     var banner = document.getElementById("banner");
     setTimeout(function () {
