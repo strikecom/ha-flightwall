@@ -198,18 +198,28 @@ board — that is the fastest way to iterate, since you are not waiting for airc
 |---|---|---|
 | `r1`–`r7` | Row values, in label order | demo text |
 | `l1`–`l8` | Label overrides | see below |
-| `p` | Progress, `0` to `cols` | `10` |
+| `p` | Progress, `0` to `cols` | `10` on the demo board, else `0` |
 | `cols` | Board width in characters | `16` |
-| `ms` | Milliseconds per flap step, `12`-`2000` | preset |
-| `laps` | Extra full passes before a cell settles, `0`–`3` | `1` |
-| `logo` | Airline IATA code, or a full image URL | none |
+| `ms` | Milliseconds per flap step, `12`-`2000` | `300` |
+| `laps` | Extra full passes before a cell settles, `0`–`3` | `0` |
+| `logo` | Airline IATA code, or a full image URL | `LH` on the demo board, else none |
 | `perf` | `high`, `mid` or `low` preset for weaker tablets | `high` |
-| `lite` | `1` trims painted effects | preset |
-| `flip` | `0` swaps characters without the 3D flip | preset |
-| `maxsteps` | Cap on flaps per cell, `0` uncapped | preset |
+| `lite` | `1` trims painted effects | `0` |
+| `flip` | `0` swaps characters without the 3D flip | `1` |
+| `maxsteps` | Cap on flaps per cell, `0` uncapped | `14` |
 | `intro` | `0` disables the incoming-flight sequence | `1` |
 | `hold` | Milliseconds the previous flight stays visible | `900` |
 | `blink` | Milliseconds the banner blinks | `2200` |
+
+The defaults above are what `perf=high` resolves to, since that is the default preset.
+Only two of them change with `perf`, and `ms`, `laps` and `flip` are the same in all
+three:
+
+| `perf` | `lite` | `maxsteps` |
+|---|---|---|
+| `high` | `0` | `14` |
+| `mid` | `1` | `8` |
+| `low` | `1` | `5` |
 
 Default labels: `FLIGHT`, `AIRCRAFT`, `AIRLINE`, `TO`, `ESTIMATED`, `ALTITUDE`,
 `AIRSPEED`, `PROGRESS`.
@@ -287,7 +297,7 @@ rather than from blank, which is how a real board behaves. It also means a cell 
 character is unchanged simply does not move.
 
 The whole sequence adds `hold + blink` before the flaps begin, about 3.1 seconds at
-the defaults, on top of roughly 4.5 seconds of flapping. Set `intro=0` to go straight
+the defaults, on top of roughly 4.3 seconds of flapping. Set `intro=0` to go straight
 to the flaps.
 
 Nothing is stored on the Home Assistant side: the page writes the current values to
@@ -297,24 +307,33 @@ previous flight and the sequence is skipped automatically.
 
 ### Settle time
 
-Two parameters set how long the board takes to come to rest:
+`maxsteps` is what decides this in practice, and at its default of `14` it settles
+the question on its own: the worst cell walks 14 steps, so the board is at rest after
+about 4.3 seconds. `mid` and `low` cap it lower and finish sooner.
 
-| `laps` | Worst-case steps | At `ms=76` | At `ms=55` |
+`laps` only comes into play once the cap is lifted. `shorten()` compares the whole
+journey against `maxsteps` and zeroes `laps` whenever it does not fit, which at the
+default cap is always. **`laps` therefore does nothing unless you also pass
+`maxsteps=0`.**
+
+With the cap off, each lap adds one full pass through the 46-character set:
+
+| `laps` | Worst-case steps | At `ms=300` | At `ms=200` |
 |---|---|---|---|
-| `0` | 45 | 4.3 s | 3.3 s |
-| `1` | 91 | 7.8 s | 5.9 s |
-| `2` | 137 | 11.3 s | 8.3 s |
+| `0` | 45 | 13.5 s | 9.0 s |
+| `1` | 91 | 27.3 s | 18.2 s |
+| `2` | 137 | 41.1 s | 27.4 s |
 
-`laps=0` takes the shortest path: each cell stops the first time it reaches its
-character, and a cell whose character has not changed never moves. Sparse and true to
-a real board, but visually thin when only a few values differ.
+`laps=0`, the default, takes the shortest path: each cell stops the first time it
+reaches its character, and a cell whose character has not changed never moves. Sparse
+and true to a real board, but visually thin when only a few values differ.
 
-`laps=1`, the default, sends every cell all the way round once more before it
-settles, so the whole board moves on every update. Add the intro sequence and the
-board is at rest after about eleven seconds at the default `ms`.
+`laps=1` sends every cell all the way round once more before it settles, so the whole
+board moves on every update. Uncapped that is close to half a minute of flapping, so
+it is worth pairing with a lower `ms`.
 
-If that feels slow, lower `ms` rather than `laps` — more flips at a quicker pace
-reads better than fewer flips at a stately one.
+If the board takes too long to settle, lower `maxsteps` rather than `ms` — fewer
+flips at 300 ms reads better than more flips at a pace where the two beats blur.
 
 ### Performance on older tablets
 
@@ -326,7 +345,7 @@ Everything is switchable from a dashboard. The package creates:
 |---|---|
 | `input_select.flightwall_style` | dot-matrix or split-flap |
 | `input_select.flightwall_perf` | `high`, `mid` or `low` preset |
-| `input_number.flightwall_laps` | extra passes, `-1` leaves it to the preset |
+| `input_number.flightwall_laps` | extra passes, `-1` leaves it to the preset. Inert unless `maxsteps` is `0` |
 | `input_number.flightwall_maxsteps` | flap cap, `-1` leaves it to the preset |
 | `input_number.flightwall_ms` | step duration, `-1` leaves it to the preset |
 | `input_boolean.flightwall_flip` | the 3D flip itself |
@@ -348,13 +367,18 @@ http://your-ha:8123/local/flightwall/splitflap.html?perf=low
 ```
 
 Start with the `perf` preset and only reach for individual parameters if it is not
-enough. Any explicit parameter overrides the preset, so `perf=low&ms=76` is valid.
+enough. Any explicit parameter overrides the preset, so `perf=low&ms=200` is valid.
+
+All three presets run the same 300 ms step, because that is where the mechanism reads
+best and a slower step is also less work per second. What they trade away is
+`maxsteps` and painted effects, so a weaker tablet gets a board that settles sooner
+rather than one that flaps faster.
 
 | `perf` | `ms` | `maxsteps` | Beat 1 | Beat 2 | Text writes | Settle |
 |---|---|---|---|---|---|---|
-| `high` | 170 | 14 | 88 ms | 82 ms | ~3,800 | 3.2 s |
-| `mid` | 145 | 8 | 75 ms | 70 ms | ~2,500 | 2.0 s |
-| `low` | 120 | 5 | 62 ms | 58 ms | ~1,700 | 1.5 s |
+| `high` | 300 | 14 | 156 ms | 144 ms | ~3,800 | 4.3 s |
+| `mid` | 300 | 8 | 156 ms | 144 ms | ~2,500 | 3.1 s |
+| `low` | 300 | 5 | 156 ms | 144 ms | ~1,700 | 2.3 s |
 
 Write counts are measured, not estimated, by instrumenting `textContent` while the
 board runs headlessly.
@@ -382,14 +406,14 @@ realistic one, and it multiplies the work: leave it at `-1` unless you want it.
 
 | You want | `ms` | `maxsteps` | `laps` |
 |---|---|---|---|
-| Most convincing, if the tablet can take it | 200 | 14 | -1 |
-| A good default | 170 | 14 | -1 |
-| Snappier, still mechanical | 140 | 8 | -1 |
-| Whole board churns on every update | 170 | 25 | 1 |
-| Weak hardware | 120 | 5 | -1 |
+| The default | 300 | 14 | -1 |
+| Snappier, still mechanical | 200 | 8 | -1 |
+| Whole board churns on every update | 300 | 25 | 1 |
+| Weak hardware | 300 | 5 | -1 |
 
-Change one at a time. `ms` first, since it decides whether the mechanism is visible
-at all, then `maxsteps` until it runs smoothly.
+Change one at a time. `maxsteps` first, since it decides how long the board takes to
+settle, and leave `ms` alone unless the flaps themselves feel wrong: it decides
+whether the mechanism is visible at all, and 300 is where it reads best.
 
 To check the mechanism itself, slow it right down and cut it to a single flap per
 cell:

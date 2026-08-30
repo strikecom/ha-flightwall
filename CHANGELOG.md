@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.14.0
+
+- All three performance presets now run the same 300 ms step. That is where the two
+  beats read best, and a slower step is also less work per second, so the step was
+  never what the presets should have been trading away. They still differ in
+  `maxsteps` and in painted effects, so a weaker tablet gets a board that settles
+  sooner rather than one that flaps faster
+- Measured settle times are now 4.3 s at `high`, 3.1 s at `mid` and 2.3 s at `low`,
+  up from 3.2 / 2.0 / 1.5. Lower `maxsteps` if that is too long to look at
+- The URL parameter table gave "preset" as the default for `ms`, `lite`, `flip` and
+  `maxsteps`, which meant looking them up in the source. It now gives the resolved
+  values, with a second table for the two that actually differ between presets
+- The table also claimed `laps` defaults to `1`; it is and was `0`. The settle-time
+  section was written before `maxsteps` existed and quoted times that cannot occur at
+  the default cap, because `shorten()` zeroes `laps` whenever the journey does not fit
+  in `maxsteps` - which at the default is always. That `laps` is inert unless
+  `maxsteps=0` is now stated rather than left to be discovered
+
 ## 1.13.2
 
 - Fixed the real cause of the flap reading as a single event: only the first flap of

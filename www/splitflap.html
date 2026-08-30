@@ -267,10 +267,16 @@
   // Below roughly 120 ms per step the two blur into one event and the board
   // stops looking mechanical, so the presets favour fewer, slower flaps over
   // many fast ones. That is both more convincing and less work.
+  //
+  // All three presets run the same 300 ms step, which is where the mechanism
+  // reads best. A slower step is also less work per second, so the step is not
+  // what the presets trade away: they differ in maxsteps and in painted
+  // effects, and a weaker tablet gets a board that settles sooner rather than
+  // one that flaps faster.
   var PRESET = {
-    high: { ms: 170, laps: 0, lite: false, flip: true, maxsteps: 14 },
-    mid:  { ms: 145, laps: 0, lite: true,  flip: true, maxsteps: 8  },
-    low:  { ms: 120, laps: 0, lite: true,  flip: true, maxsteps: 5  }
+    high: { ms: 300, laps: 0, lite: false, flip: true, maxsteps: 14 },
+    mid:  { ms: 300, laps: 0, lite: true,  flip: true, maxsteps: 8  },
+    low:  { ms: 300, laps: 0, lite: true,  flip: true, maxsteps: 5  }
   }[PERF];
 
   // An explicit parameter always wins over the preset.
