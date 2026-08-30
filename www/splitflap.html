@@ -18,9 +18,21 @@
 
     r1..r7  row values, in label order
     p       progress, 0..cols, drives the bottom strip
+    logo    optional airline IATA code, or a full image URL. Shown as a flap
+            in the leftmost cell of the FLIGHT row, as carrier logos were on
+            real Solari boards. Omit for a blank cell.
     l1..l8  optional label overrides, defaults are printed below
     cols    optional, board width in characters, default 16
     ms      optional, milliseconds per flap step, default 76
+    lite    optional, 1 trims painted effects for older tablets, default 0
+    intro   optional, 0 disables the incoming-flight sequence, default 1
+    hold    optional, ms the previous flight stays visible, default 900
+    blink   optional, ms the INCOMING banner blinks, default 2200
+
+  On load the board first restores the previous flight from localStorage, blinks
+  a green FLIGHT INCOMING banner, and only then flaps over to the new values.
+  The flaps therefore start from the previous letters rather than from blank,
+  as they would on a real board. With no stored flight the sequence is skipped.
 
   Row labels are printed on the frame rather than set in flaps, which is how a
   real departure board does it.
@@ -39,6 +51,7 @@
     --flap-lit: #23262c;
     --ink: #f4f3ef;
     --label: #8b9099;
+    --amber: #ffc033;
     --seam: rgba(0, 0, 0, .65);
     --edge: rgba(255, 255, 255, .05);
     --lit: #35ff7a;
@@ -76,14 +89,16 @@
     user-select: none;
   }
 
-  .row { display: flex; gap: calc(var(--gap) * 0.8); }
+  .row { display: flex; gap: calc(var(--gap) * 0.8); perspective: 260px; }
 
   .cell {
     position: relative;
     width: var(--cell-w);
     height: var(--cell-h);
-    perspective: 260px;
     border-radius: calc(var(--cell-h) * 0.06);
+    /* Isolate each cell so a flip cannot trigger layout or paint outside it.
+       This is the single biggest win on low-powered tablets. */
+    contain: layout paint style;
     overflow: hidden;
     background: var(--flap);
     box-shadow: inset 0 0 0 1px var(--edge);
@@ -123,6 +138,7 @@
   /* The two animating leaves sit above the static halves during a flip. */
   .leaf-top {
     top: 0;
+    will-change: transform;
     transform-origin: bottom center;
     z-index: 3;
     border-bottom: 1px solid var(--seam);
@@ -130,6 +146,7 @@
   }
   .leaf-bottom {
     bottom: 0;
+    will-change: transform;
     transform-origin: top center;
     z-index: 3;
     transform: rotateX(90deg);
@@ -138,17 +155,70 @@
   .leaf-top > span    { top: 0; }
   .leaf-bottom > span { top: -100%; }
 
-  .flipping .leaf-top    { animation: leaf-fall var(--dur) cubic-bezier(.36,.1,.6,1) forwards; }
-  .flipping .leaf-bottom { animation: leaf-rise var(--dur) cubic-bezier(.4,.2,.3,1) forwards; }
+  .flip-a .leaf-top    { animation: fall-a var(--dur) cubic-bezier(.36,.1,.6,1) forwards; }
+  .flip-a .leaf-bottom { animation: rise-a var(--dur) cubic-bezier(.4,.2,.3,1) forwards; }
+  .flip-b .leaf-top    { animation: fall-b var(--dur) cubic-bezier(.36,.1,.6,1) forwards; }
+  .flip-b .leaf-bottom { animation: rise-b var(--dur) cubic-bezier(.4,.2,.3,1) forwards; }
 
-  @keyframes leaf-fall {
-    0%   { transform: rotateX(0deg);   filter: brightness(1); }
-    100% { transform: rotateX(-90deg); filter: brightness(.55); }
+  /* Two identical pairs under different names. Alternating between them
+     restarts the animation without the forced reflow a single name needs. */
+  @keyframes fall-a { 0% { transform: rotateX(0deg); }  100% { transform: rotateX(-90deg); } }
+  @keyframes rise-a { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0deg); } }
+  @keyframes fall-b { 0% { transform: rotateX(0deg); }  100% { transform: rotateX(-90deg); } }
+  @keyframes rise-b { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0deg); } }
+
+  /* Shading is a static difference between the leaf faces rather than an
+     animated filter. Animating filter forces a repaint on every frame. */
+  .shade .leaf-top    { background: #15171b; }
+  .shade .leaf-bottom { background: #262930; }
+
+  #banner {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 9, 11, .55);
+    z-index: 10;
+    pointer-events: none;
   }
-  @keyframes leaf-rise {
-    0%   { transform: rotateX(90deg);  filter: brightness(.55); }
-    100% { transform: rotateX(0deg);   filter: brightness(1); }
+  #banner.on { display: flex; }
+  #banner span {
+    font-family: 'Roboto Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+    font-size: calc(var(--cell-h) * 0.72);
+    font-weight: 500;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--lit);
+    text-shadow: 0 0 calc(var(--cell-h) * 0.35) rgba(53, 255, 122, .55);
+    animation: blink .42s steps(1, end) infinite;
   }
+  @keyframes blink { 0%, 54% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+  /* Logo flap. Same two-leaf mechanism, an image instead of a glyph. */
+  .cell.logo .half > img {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: var(--cell-h);
+    object-fit: contain;
+    padding: 9%;
+    filter: brightness(1.15) saturate(1.4) contrast(1.1);
+  }
+  .cell.logo .top > img,
+  .cell.logo .leaf-top > img    { top: 0; }
+  .cell.logo .bottom > img,
+  .cell.logo .leaf-bottom > img { top: -100%; }
+
+  /* Estimated time is picked out in amber, as on a real departure board. */
+  .line.est .label { color: var(--amber); opacity: .8; }
+  .cell.est .half > span { color: var(--amber); }
+
+  /* lite: fewer painted effects, for older tablets */
+  .lite .cell { box-shadow: none; border-radius: 0; }
+  .lite .half { border-bottom-color: rgba(0, 0, 0, .8); }
+  .lite #banner span { text-shadow: none; }
+  .lite .cell.logo .half > img { filter: none; }
 
   .cell.bar .half > span { color: var(--lit); }
   .line.bar .label { color: var(--lit); opacity: .7; }
@@ -157,6 +227,7 @@
 </head>
 <body>
 <div id="board"></div>
+<div id="banner"><span>Flight Incoming</span></div>
 
 <script>
 (function () {
@@ -165,6 +236,25 @@
   var q = new URLSearchParams(location.search);
   var COLS = Math.max(8, Math.min(48, parseInt(q.get("cols"), 10) || 16));
   var STEP = Math.max(12, Math.min(300, parseInt(q.get("ms"), 10) || 76));
+  var INTRO = q.get("intro") !== "0";
+  var HOLD  = Math.max(0, Math.min(5000, parseInt(q.get("hold"), 10) || 900));
+  var BLINK = Math.max(0, Math.min(8000, parseInt(q.get("blink"), 10) || 2200));
+  var STORE = "flightwall.previous";
+  // lite=1 trims everything that costs paint time on weak tablets.
+  var LITE  = q.get("lite") === "1";
+
+  // Alternating the two flip classes restarts the animation without forcing a
+  // synchronous reflow, which at 128 cells was the main source of stutter.
+  function flipClass(c) {
+    c.el.classList.remove("idle");
+    if (c.el.classList.contains("flip-a")) {
+      c.el.classList.remove("flip-a");
+      c.el.classList.add("flip-b");
+    } else {
+      c.el.classList.remove("flip-b");
+      c.el.classList.add("flip-a");
+    }
+  }
 
   // Flap order. A real board cycles through its physical sequence, so reaching
   // a late character takes visibly longer than an early one. That uneven timing
@@ -175,6 +265,16 @@
   var LABELS = ["FLIGHT", "AIRCRAFT", "AIRLINE", "TO",
                 "ESTIMATED", "ALTITUDE", "AIRSPEED", "PROGRESS"];
 
+  var LOGO_ROW = 0;   // FLIGHT row carries the carrier logo
+  var EST_ROW  = 4;   // ESTIMATED row is picked out in amber
+  var LOGO_PAD = "  "; // logo cell plus one blank, so text starts at cell 2
+
+  function logoUrl(v) {
+    if (!v) return "";
+    if (v.indexOf("/") === 0 || v.indexOf("http") === 0) return v;
+    return "https://images.kiwi.com/airlines/128/" + v.toUpperCase() + ".png";
+  }
+
   var demo = {
     r1: "LH1117",
     r2: "AIRBUS A321-231",
@@ -183,7 +283,8 @@
     r5: "19:26 IN 34M",
     r6: "11.300 FT",
     r7: "346 KT",
-    p: "10"
+    p: "10",
+    logo: "LH"
   };
 
   var hasParams = q.has("r1") || q.has("r2") || q.has("r3");
@@ -197,6 +298,11 @@
   function label(i) {
     var v = q.get("l" + (i + 1));
     return (v === null || v === "") ? LABELS[i] : v;
+  }
+
+  // Row 0 is indented so its text clears the logo flap and the gap after it.
+  function rowText(idx, value) {
+    return (idx === LOGO_ROW ? LOGO_PAD : "") + String(value || "");
   }
 
   function normalise(text, set) {
@@ -219,28 +325,55 @@
     return s;
   }
 
+  // The previous flight is kept in localStorage so the board can show it again
+  // before flapping over, exactly as a real board still displays the last
+  // departure until the new one rolls in.
+  function readPrevious() {
+    try {
+      var raw = window.localStorage.getItem(STORE);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeCurrent() {
+    try {
+      var o = { p: param("p"), logo: param("logo") };
+      ["r1", "r2", "r3", "r4", "r5", "r6", "r7"].forEach(function (k) { o[k] = param(k); });
+      window.localStorage.setItem(STORE, JSON.stringify(o));
+    } catch (e) { /* private mode, storage full: not worth failing over */ }
+  }
+
+  var previous = readPrevious();
+
+  if (!LITE) document.body.classList.add("shade");
+  if (LITE) document.body.classList.add("lite");
+
   var board = document.getElementById("board");
   var cells = [];
 
-  function buildCell(isBar) {
+  function buildCell(kind) {
+    var isBar = kind === "bar";
+    var isLogo = kind === "logo";
     var cell = document.createElement("div");
-    cell.className = "cell idle" + (isBar ? " bar" : "");
+    cell.className = "cell idle" + (isBar ? " bar" : "") + (isLogo ? " logo" : "");
     cell.style.setProperty("--dur", STEP + "ms");
     ["top", "bottom", "leaf-top", "leaf-bottom"].forEach(function (cls) {
       var half = document.createElement("div");
       half.className = "half " + cls;
-      var span = document.createElement("span");
-      span.textContent = " ";
-      half.appendChild(span);
+      half.appendChild(document.createElement(isLogo ? "img" : "span"));
+      if (!isLogo) half.lastChild.textContent = " ";
       cell.appendChild(half);
     });
-    var halves = cell.querySelectorAll(".half > span");
+    var faces = cell.querySelectorAll(".half > " + (isLogo ? "img" : "span"));
     return {
       el: cell,
-      top: halves[0],
-      bottom: halves[1],
-      leafTop: halves[2],
-      leafBottom: halves[3],
+      logo: isLogo,
+      top: faces[0],
+      bottom: faces[1],
+      leafTop: faces[2],
+      leafBottom: faces[3],
       set: isBar ? BAR : MAIN,
       index: 0,
       target: 0
@@ -248,8 +381,9 @@
   }
 
   function buildLine(idx, text, isBar) {
+    var isEst = idx === EST_ROW;
     var line = document.createElement("div");
-    line.className = "line" + (isBar ? " bar" : "");
+    line.className = "line" + (isBar ? " bar" : "") + (isEst ? " est" : "");
 
     var lab = document.createElement("div");
     lab.className = "label";
@@ -260,10 +394,13 @@
     row.className = "row";
     var chars = normalise(text, isBar ? BAR : MAIN);
     for (var i = 0; i < COLS; i++) {
-      var c = buildCell(isBar);
+      var wantsLogo = (idx === LOGO_ROW && i === 0);
+      var c = buildCell(wantsLogo ? "logo" : (isBar ? "bar" : "char"));
+      if (isEst) c.el.classList.add("est");
       c.target = c.set.indexOf(chars[i]);
       if (c.target < 0) c.target = 0;
       c.col = i;
+      c.row = idx;
       row.appendChild(c.el);
       cells.push(c);
     }
@@ -272,9 +409,55 @@
   }
 
   ["r1", "r2", "r3", "r4", "r5", "r6", "r7"].forEach(function (k, i) {
-    buildLine(i, param(k), false);
+    buildLine(i, rowText(i, param(k)), false);
   });
   buildLine(7, progressRow(), true);
+
+  // Put a character in place with no animation, used to restore the previous
+  // flight before the sequence starts.
+  function setInstant(c, ch) {
+    if (c.logo) return;
+    var i = c.set.indexOf(ch);
+    if (i < 0) i = 0;
+    c.index = i;
+    var glyph = c.set.charAt(i);
+    c.top.textContent = glyph;
+    c.bottom.textContent = glyph;
+  }
+
+  function restorePrevious() {
+    if (!previous) return false;
+    var any = false;
+    var keys = ["r1", "r2", "r3", "r4", "r5", "r6", "r7"];
+    var idx = 0;
+    cells.forEach(function (c) { c._row = Math.floor(idx++ / COLS); });
+    cells.forEach(function (c) {
+      var text;
+      if (c._row < 7) {
+        text = rowText(c._row, previous[keys[c._row]] || "");
+      } else {
+        var n = parseInt(previous.p, 10);
+        if (isNaN(n) || n < 0) n = 0;
+        if (n > COLS) n = COLS;
+        text = "";
+        for (var i = 0; i < COLS; i++) text += (i < n ? "\u2588" : "\u00B7");
+      }
+      var chars = normalise(text, c.set);
+      if (chars[c.col] !== " ") any = true;
+      setInstant(c, chars[c.col]);
+    });
+    var prevLogo = logoUrl(previous.logo);
+    cells.forEach(function (c) {
+      if (!c.logo) return;
+      c.top.src = prevLogo;
+      c.bottom.src = prevLogo;
+      c.top.style.visibility = prevLogo ? "visible" : "hidden";
+      c.bottom.style.visibility = prevLogo ? "visible" : "hidden";
+      c.prevSrc = prevLogo;
+      if (prevLogo) any = true;
+    });
+    return any;
+  }
 
   // One flap step: the outgoing top leaf falls away while the incoming bottom
   // leaf swings up, and the static halves are swapped underneath at the
@@ -290,26 +473,69 @@
     c.bottom.textContent = cur;
     c.top.textContent = nxt;
 
-    c.el.classList.remove("idle");
-    c.el.classList.remove("flipping");
-    void c.el.offsetWidth;
-    c.el.classList.add("flipping");
+    flipClass(c);
 
     setTimeout(function () {
       c.bottom.textContent = nxt;
       c.index = next;
-      c.el.classList.remove("flipping");
+      c.el.classList.remove("flip-a", "flip-b");
       c.el.classList.add("idle");
       step(c);
     }, STEP);
   }
 
+  // The logo flap turns once, from the previous carrier to the new one.
+  function flipLogo(c) {
+    var from = c.prevSrc || "";
+    var to = logoUrl(param("logo"));
+    [c.top, c.bottom, c.leafTop, c.leafBottom].forEach(function (img) {
+      img.style.visibility = "hidden";
+    });
+    if (from) {
+      c.leafTop.src = from; c.leafTop.style.visibility = "visible";
+      c.bottom.src = from;  c.bottom.style.visibility = "visible";
+    }
+    if (to) {
+      c.leafBottom.src = to; c.leafBottom.style.visibility = "visible";
+      c.top.src = to;        c.top.style.visibility = "visible";
+    }
+    if (!from && !to) return;
+
+    flipClass(c);
+    setTimeout(function () {
+      if (to) { c.bottom.src = to; c.bottom.style.visibility = "visible"; }
+      else { c.bottom.style.visibility = "hidden"; }
+      c.el.classList.remove("flip-a", "flip-b");
+      c.el.classList.add("idle");
+    }, STEP);
+  }
+
   // Stagger by column so the update sweeps left to right, with a little jitter
   // so the columns do not move in lockstep.
-  function start() {
+  function flapToNew() {
     cells.forEach(function (c) {
-      setTimeout(function () { step(c); }, c.col * 52 + Math.random() * 90);
+      var delay = c.col * 52 + Math.random() * 90;
+      setTimeout(function () { c.logo ? flipLogo(c) : step(c); }, delay);
     });
+  }
+
+  function start() {
+    writeCurrent();
+    var restored = INTRO && restorePrevious();
+    if (!restored) {
+      cells.forEach(function (c) { if (c.logo) c.prevSrc = ""; });
+      flapToNew();
+      return;
+    }
+
+    var banner = document.getElementById("banner");
+    setTimeout(function () {
+      banner.classList.add("on");
+      setTimeout(function () {
+        banner.classList.remove("on");
+        flapToNew();
+      }, BLINK);
+    }, HOLD);
   }
 
   if (document.readyState === "complete") start();

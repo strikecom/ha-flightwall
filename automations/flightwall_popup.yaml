@@ -8,13 +8,14 @@
 #
 # Two display styles, selected by input_select.flightwall_style:
 #   dot-matrix  - large LED panel look, airline logo on the left
-#   split-flap  - mechanical departure board, 22 characters wide, no logo
+#   split-flap  - mechanical departure board with labelled rows, no logo
 
 alias: Flightwall Popup
 description: Shows each aircraft once as it enters the zone
 triggers:
   - trigger: state
     entity_id: sensor.flightwall_flight
+    to: ~
     id: new
   - trigger: state
     entity_id: binary_sensor.flightwall_inbound
@@ -79,6 +80,7 @@ actions:
                               {% set dstc = clean(f.airport_destination_city) | trim | upper %}
                               {% set airline = clean(f.airline_short) | trim | upper %}
                               {% set airlinel = clean(f.airline) | trim | upper %}
+                              {% set iata = clean(f.airline_iata) | trim | upper %}
                               {% set fnum = clean(f.flight_number) | trim | upper %}
                               {% set cs = clean(f.callsign) | trim | upper %}
                               {% set reg = clean(f.aircraft_registration) | trim | upper %}
@@ -90,14 +92,14 @@ actions:
                               {% set a = arr - nw %}
                               {% set prog = ([[(((nw - dep) / ([arr - dep, 1] | max)) * 16) | round(0) | int, 0] | max, 16] | min) if (arr > dep and dep > 0) else 0 %}
                               {% set atxt = ((a // 3600) ~ 'H' ~ ((a % 3600) // 60) ~ 'M') if a >= 3600 else ((a // 60) ~ 'M') %}
-                              {% set r1 = (fnum if fnum else (cs if cs else reg))[:16] %}
+                              {% set r1 = (fnum if fnum else (cs if cs else reg))[:14] %}
                               {% set r2 = (model if (model and model | length <= 16) else code)[:16] %}
                               {% set r3 = (airline if airline else airlinel)[:16] %}
                               {% set r4 = (dstc if dstc else (dst if dst else 'UNKNOWN'))[:16] %}
                               {% set r5 = ((arr | timestamp_custom('%H:%M', true) ~ ' IN ' ~ atxt) if (arr > 0 and a > 0) else 'EN ROUTE')[:16] %}
                               {% set r6 = (('{:,}'.format(f.altitude | int) | replace(',', '.') ~ ' FT') if f.altitude is defined else '')[:16] %}
                               {% set r7 = (((f.ground_speed | int | string) ~ ' KT') if f.ground_speed is defined else '')[:16] %}
-                              /local/flightwall/splitflap.html?r1={{ r1 | urlencode }}&r2={{ r2 | urlencode }}&r3={{ r3 | urlencode }}&r4={{ r4 | urlencode }}&r5={{ r5 | urlencode }}&r6={{ r6 | urlencode }}&r7={{ r7 | urlencode }}&p={{ prog }}&cols=16&ms=76
+                              /local/flightwall/splitflap.html?r1={{ r1 | urlencode }}&r2={{ r2 | urlencode }}&r3={{ r3 | urlencode }}&r4={{ r4 | urlencode }}&r5={{ r5 | urlencode }}&r6={{ r6 | urlencode }}&r7={{ r7 | urlencode }}&logo={{ iata | urlencode }}&p={{ prog }}&cols=16&ms=76
                             card_mod:
                               style: |
                                 ha-card {
@@ -412,5 +414,5 @@ actions:
                               line-height: 1 !important;
                             }
           - action: rest_command.tablet_stop_screensaver
-mode: restart
+mode: single
 max_exceeded: silent

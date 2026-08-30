@@ -201,6 +201,11 @@ board — that is the fastest way to iterate, since you are not waiting for airc
 | `p` | Progress, `0` to `cols` | `10` |
 | `cols` | Board width in characters | `16` |
 | `ms` | Milliseconds per flap step | `76` |
+| `logo` | Airline IATA code, or a full image URL | none |
+| `lite` | `1` trims painted effects for older tablets | `0` |
+| `intro` | `0` disables the incoming-flight sequence | `1` |
+| `hold` | Milliseconds the previous flight stays visible | `900` |
+| `blink` | Milliseconds the banner blinks | `2200` |
 
 Default labels: `FLIGHT`, `AIRCRAFT`, `AIRLINE`, `TO`, `ESTIMATED`, `ALTITUDE`,
 `AIRSPEED`, `PROGRESS`.
@@ -243,6 +248,73 @@ setTimeout(function () { step(c); }, c.col * 52 + Math.random() * 90);
 lockstep. Set the random term to `0` for a rigid mechanical sweep, or drop the `col`
 term for all columns starting at once.
 
+### Carrier logo flap
+
+The leftmost cell of the FLIGHT row is a logo flap rather than a character cell, as
+carrier logos were on real Solari boards. It uses the same two-leaf mechanism and
+turns once per update, from the previous carrier to the new one.
+
+Pass `logo` as an IATA code and the page builds a Kiwi CDN URL from it, or pass a
+full URL or a `/local/...` path to use your own asset. With no `logo` the cell stays
+blank and nothing turns.
+
+This is the one place where the logo resolution finally works out: a cell is about
+100 px tall on a 1080p tablet and the CDN images are 128 px, so for once the source
+is larger than the display size.
+
+The FLIGHT row is indented by two cells to clear the flap, which is why its value is
+truncated at 14 characters rather than 16. `LOGO_ROW` and `LOGO_PAD` at the top of
+the script control this; setting `LOGO_ROW` to `2` moves the flap to the AIRLINE row.
+
+### Incoming-flight sequence
+
+On load the board runs three phases:
+
+1. The previous flight is restored instantly from `localStorage`, with no animation
+2. A green `FLIGHT INCOMING` banner blinks over a dimmed board
+3. The flaps run to the new values
+
+Because phase 1 puts the old characters in the cells, the flaps start from those
+rather than from blank, which is how a real board behaves. It also means a cell whose
+character is unchanged simply does not move.
+
+The whole sequence adds `hold + blink` before the flaps begin, about 3.1 seconds at
+the defaults, on top of roughly 4.5 seconds of flapping. Set `intro=0` to go straight
+to the flaps.
+
+Nothing is stored on the Home Assistant side: the page writes the current values to
+`localStorage` under `flightwall.previous` on every load and reads them back on the
+next one. On the very first load, or in a browser with storage disabled, there is no
+previous flight and the sequence is skipped automatically.
+
+### Performance on older tablets
+
+The board animates up to 128 cells at once, so weak hardware shows it. In order of
+impact:
+
+1. **`lite=1`** drops the cell shadows, corner radius, banner glow and logo filter.
+   Costs a little depth, buys the most frames.
+2. **`cols=12`** removes a quarter of the cells outright. Truncate the values to
+   match in the automation.
+3. **`ms=110`** slows each step, so fewer frames per second are needed.
+4. **Shorten `MAIN`** in the script. It has 46 entries, so a worst-case cell does 45
+   flips. Dropping `.,-:/>()+ ` to just `.-:` cuts that noticeably.
+5. **`intro=0`** skips the restore-and-blink sequence.
+
+Three things are already handled in the code and are worth not undoing: cells use
+`contain: layout paint style` so a flip cannot trigger work outside its own cell,
+`perspective` sits on the row rather than on every cell, and the flip restarts by
+alternating two identical animation names rather than forcing a synchronous reflow.
+An earlier version read `offsetWidth` on every step, which meant several thousand
+forced layouts per update.
+
+Shading is a static difference between the leaf faces rather than an animated
+`filter: brightness()`. Animating a filter forces a repaint on every frame, which was
+the second largest cost.
+
+On Android it is also worth enabling **Force GPU rendering** in the developer
+options, and giving the Home Assistant app an exception from battery optimisation.
+
 ### How a flap works
 
 Each cell holds four layers: static `top` and `bottom` halves showing the current
@@ -256,7 +328,8 @@ Remove it and the flip looks like a fold rather than a physical flap.
 
 ### Colours
 
-Board `#08090b`, flap faces `#1a1c21`, lit faces `#23262c` during a flip, ink
+The ESTIMATED row is amber (`--amber`), matching the highlighted estimated-time
+column on real German departure boards. Board `#08090b`, flap faces `#1a1c21`, lit faces `#23262c` during a flip, ink
 `#f4f3ef` (slightly warm, to read as painted flaps rather than backlit pixels),
 labels `#8b9099`, and the progress strip `#35ff7a`. All in `:root` at the top of the
 HTML.

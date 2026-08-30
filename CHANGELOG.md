@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.7.0
+
+- Much faster on low-powered tablets. The flip no longer forces a synchronous reflow
+  on every step, which previously meant several thousand forced layouts per update
+- Shading is now a static difference between leaf faces instead of an animated
+  `filter: brightness()`, which forced a repaint every frame
+- Cells use `contain: layout paint style`, and `perspective` moved from every cell to
+  the row
+- New `lite=1` parameter trimming shadows, radii and glows
+
+## 1.6.0
+
+- Carrier logo flap in the leftmost cell of the FLIGHT row, turning once per update
+  with the same two-leaf mechanism as the character cells
+- ESTIMATED row picked out in amber, as on real departure boards
+- FLIGHT value now truncates at 14 characters, since two cells go to the logo flap
+  and its gap
+
+## 1.5.0
+
+- Split-flap board now opens by restoring the previous flight, blinking a green
+  FLIGHT INCOMING banner, and only then flapping to the new values. The flaps
+  therefore start from the previous letters instead of from blank
+- Previous flight is kept in the page's own `localStorage`, so no Home Assistant
+  helper and no automation change is needed
+- New URL parameters: `intro`, `hold`, `blink`
+
+## 1.4.1
+
+- Fixed intermittent "stopped for unknown reason" aborts. The state trigger had no
+  `to:`, so it also fired on attribute changes, and altitude and distance change on
+  every poll. Combined with `mode: restart`, a poll landing mid-run killed that run.
+  The trigger now uses `to: ~` and the mode is `single`
+
 ## 1.4.0
 
 - Screenshots of both styles in the README
